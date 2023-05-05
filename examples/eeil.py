@@ -1,10 +1,12 @@
 import argparse
+import numpy as np
+import random
+
 import torch
 from torch.nn import CrossEntropyLoss
 from torch.optim import SGD
-
 from avalanche.benchmarks.classic import SplitCIFAR10
-from avalanche.models import MTSimpleCNN
+from avalanche.models import SlimResNet18
 from avalanche.training.supervised import Naive
 from avalanche.evaluation.metrics import accuracy_metrics
 from avalanche.logging import InteractiveLogger, TextLogger
@@ -13,6 +15,11 @@ from avalanche.training.plugins import EvaluationPlugin
 import sys
 sys.path.insert(0, '../.')
 from avalanche_addons.plugins import EEIL  # noqa: E402
+
+random.seed(0)
+np.random.seed(0)
+torch.manual_seed(0)
+torch.use_deterministic_algorithms(True)
 
 
 def main(args):
@@ -24,10 +31,13 @@ def main(args):
         else "cpu"
     )
     # model
-    model = MTSimpleCNN()
+    model = SlimResNet18(10)
 
     # CL Benchmark Creation
-    benchmark = SplitCIFAR10(n_experiences=5, return_task_id=True)
+    benchmark = SplitCIFAR10(
+        n_experiences=5,
+        return_task_id=True,
+        class_ids_from_zero_in_each_exp=True)
     train_stream = benchmark.train_stream
     test_stream = benchmark.test_stream
 
@@ -53,7 +63,7 @@ def main(args):
         optimizer=optimizer,
         criterion=criterion,
         train_mb_size=128,
-        train_epochs=3,
+        train_epochs=1,
         eval_mb_size=128,
         device=device,
         evaluator=eval_plugin,
