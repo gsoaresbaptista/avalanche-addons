@@ -6,7 +6,7 @@ import torch
 from torch.nn import CrossEntropyLoss
 from torch.optim import SGD
 from avalanche.benchmarks.classic import SplitCIFAR10
-from avalanche.models import SlimResNet18
+from avalanche.models import MTSlimResNet18
 from avalanche.training.supervised import Naive
 from avalanche.evaluation.metrics import accuracy_metrics
 from avalanche.logging import InteractiveLogger, TextLogger
@@ -19,7 +19,7 @@ from avalanche_addons.plugins import EEIL  # noqa: E402
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
-torch.use_deterministic_algorithms(True)
+# torch.use_deterministic_algorithms(True)
 
 
 def main(args):
@@ -31,7 +31,7 @@ def main(args):
         else "cpu"
     )
     # model
-    model = SlimResNet18(10)
+    model = MTSlimResNet18(2)
 
     # CL Benchmark Creation
     benchmark = SplitCIFAR10(
@@ -52,7 +52,7 @@ def main(args):
 
     eval_plugin = EvaluationPlugin(
         accuracy_metrics(
-            minibatch=False, epoch=False, experience=True, stream=False
+            minibatch=False, epoch=True, experience=True, stream=False
         ),
         loggers=[interactive_logger, text_logger],
     )
@@ -63,11 +63,11 @@ def main(args):
         optimizer=optimizer,
         criterion=criterion,
         train_mb_size=128,
-        train_epochs=1,
+        train_epochs=5,
         eval_mb_size=128,
         device=device,
         evaluator=eval_plugin,
-        plugins=[EEIL(mem_size=2000)],
+        plugins=[EEIL(mem_size=2000, stage_2_epochs=5)],
     )
 
     # train and test loop
