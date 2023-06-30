@@ -7,7 +7,10 @@ from torch.nn import CrossEntropyLoss
 from torch.optim import SGD
 from avalanche.benchmarks.classic import SplitCIFAR100
 from avalanche.training.supervised import Naive
-from avalanche.evaluation.metrics import accuracy_metrics
+from avalanche.evaluation.metrics import accuracy_metrics, forgetting_bwt
+from avalanche.evaluation.metrics.forgetting_bwt import bwt_metrics
+from avalanche.evaluation.metrics.forward_transfer import forward_transfer_metrics 
+
 from avalanche.logging import InteractiveLogger, TextLogger
 from avalanche.training.plugins import EvaluationPlugin
 import torchvision.transforms as transforms
@@ -15,11 +18,12 @@ from torchvision.datasets import CIFAR100
 from avalanche.training.plugins import EarlyStoppingPlugin
 from torchvision import models
 from avalanche_addons.utils import resnet32
+from avalanche_addons.strategy import DMC
 
 import sys
 
 sys.path.insert(0, "../.")
-from avalanche_addons.plugins import DMC  # noqa: E402
+# from avalanche_addons.plugins import DMC  # noqa: E402
 
 random.seed(0)
 np.random.seed(0)
@@ -28,19 +32,38 @@ torch.manual_seed(0)
 
 
 def main(args):
-    cifar_mean = [0.49139968, 0.48215827, 0.44653124]
-    cifar_std = [0.24703233, 0.24348505, 0.26158768]
+    cifar_mean = [0.5071, 0.4866, 0.4409]
+    cifar_std = [0.2009, 0.1984, 0.2023]
 
-    transform = transforms.Compose(
+    train_transform = transforms.Compose(
         [
+            transforms.Pad(4),
+            transforms.RandomResizedCrop(32),
+            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean=cifar_mean, std=cifar_std),
         ]
     )
-    cifar = CIFAR100(
-        "../data", train=False, transform=transform, download=True
+    val_transform = transforms.Compose(
+        [
+            transforms.Pad(4),
+            transforms.CenterCrop(32),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=cifar_mean, std=cifar_std),
+        ]
     )
-    cifar = torch.utils.data.DataLoader(cifar, batch_size=256, shuffle=True)
+    train_cifar = CIFAR100(
+        "../data", train=True, transform=train_transform, download=True
+    )
+    val_cifar = CIFAR100(
+        "../data", train=False, transform=val_transform, download=True
+    )
+    trn_loader = torch.utils.data.DataLoader(
+        train_cifar, batch_size=32, shuffle=True
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_cifar, batch_size=32, shuffle=True
+    )
 
     # Config
     device = torch.device(
@@ -49,13 +72,13 @@ def main(args):
         else "cpu"
     )
     # model
-    # model = models.resnet50()
     model = resnet32(False)
 
     # CL Benchmark Creation
     benchmark = SplitCIFAR100(
         n_experiences=5,
         return_task_id=True,
+        fixed_class_order=list(range(100)),
         class_ids_from_zero_in_each_exp=True,
     )
     train_stream = benchmark.train_stream
@@ -63,7 +86,7 @@ def main(args):
 
     # Prepare for training & testing
     optimizer = SGD(
-        model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4
+        model.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-5
     )
     criterion = CrossEntropyLoss()
 
@@ -73,28 +96,27 @@ def main(args):
 
     eval_plugin = EvaluationPlugin(
         accuracy_metrics(
-            minibatch=False, epoch=True, experience=True, stream=False
+            minibatch=False, epoch=True, experience=True, stream=True
         ),
+        bwt_metrics(experience=True, stream=True),
+        forward_transfer_metrics(experience=True, stream=True),
         loggers=[interactive_logger, text_logger],
     )
 
-    # Choose a CL strategy
-    strategy = Naive(
+    strategy = DMC(
         model=model,
+        lr=0.1,
+        classes_per_task=160,
+        aux_trn_loader=trn_loader,
+        aux_val_loader=val_loader,
         optimizer=optimizer,
         criterion=criterion,
-        train_mb_size=256,
-        train_epochs=300,
-        eval_mb_size=256,
+        train_mb_size=32,
+        train_epochs=30,
+        eval_mb_size=32,
         device=device,
         evaluator=eval_plugin,
         plugins=[
-            DMC(
-                stage_2_epochs=300,
-                lr=0.001,
-                classes_per_task=20,
-                dataloader=cifar,
-            ),
             EarlyStoppingPlugin(patience=5, val_stream_name="train"),
         ],
     )
