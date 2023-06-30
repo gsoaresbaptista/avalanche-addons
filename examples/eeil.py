@@ -13,7 +13,8 @@ from avalanche.logging import InteractiveLogger, TextLogger
 from avalanche.training.plugins import EvaluationPlugin
 
 import sys
-sys.path.insert(0, '../.')
+
+sys.path.insert(0, "../.")
 from avalanche_addons.plugins import EEIL  # noqa: E402
 
 random.seed(0)
@@ -23,7 +24,6 @@ torch.manual_seed(0)
 
 
 def main(args):
-
     # Config
     device = torch.device(
         f"cuda:{args.cuda}"
@@ -37,18 +37,20 @@ def main(args):
     benchmark = SplitCIFAR10(
         n_experiences=5,
         return_task_id=True,
-        class_ids_from_zero_in_each_exp=True)
+        class_ids_from_zero_in_each_exp=True,
+    )
     train_stream = benchmark.train_stream
     test_stream = benchmark.test_stream
 
     # Prepare for training & testing
-    optimizer = SGD(model.parameters(), lr=0.1,
-                    momentum=0.9, weight_decay=1e-4)
+    optimizer = SGD(
+        model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4
+    )
     criterion = CrossEntropyLoss()
 
     # choose some metrics and evaluation method
     interactive_logger = InteractiveLogger()
-    text_logger = TextLogger(open('eeil.txt', 'a'))
+    text_logger = TextLogger(open("eeil.txt", "a"))
 
     eval_plugin = EvaluationPlugin(
         accuracy_metrics(
@@ -73,7 +75,7 @@ def main(args):
     # train and test loop
     for i, train_task in enumerate(train_stream):
         strategy.train(train_task)
-        strategy.eval(test_stream[:i + 1])
+        strategy.eval(test_stream[: i + 1])
 
 
 if __name__ == "__main__":
