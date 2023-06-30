@@ -12,8 +12,8 @@ from avalanche.logging import InteractiveLogger, TextLogger
 from avalanche.training.plugins import EvaluationPlugin
 import torchvision.transforms as transforms
 from torchvision.datasets import CIFAR100
-from avalanche.training.plugins import EarlyStoppingPlugin, LRSchedulerPlugin
-
+from avalanche.training.plugins import EarlyStoppingPlugin
+from torchvision import models
 from avalanche_addons.utils import resnet32
 
 import sys
@@ -61,8 +61,8 @@ def get_animals10():
 
 
 def main(args):
-    cifar_mean = [0.491, 0.482, 0.446]
-    cifar_std = [0.247, 0.243, 0.261]
+    cifar_mean = [0.49139968, 0.48215827, 0.44653124]
+    cifar_std = [0.24703233, 0.24348505, 0.26158768]
 
     transform = transforms.Compose(
         [
@@ -73,7 +73,7 @@ def main(args):
     cifar = CIFAR100(
         "../data", train=False, transform=transform, download=True
     )
-    cifar = torch.utils.data.DataLoader(cifar, batch_size=128, shuffle=True)
+    cifar = torch.utils.data.DataLoader(cifar, batch_size=256, shuffle=True)
 
     # Config
     device = torch.device(
@@ -82,7 +82,7 @@ def main(args):
         else "cpu"
     )
     # model
-    # model = models.resnet32()
+    # model = models.resnet50()
     model = resnet32(False)
 
     # CL Benchmark Creation
@@ -116,15 +116,15 @@ def main(args):
         model=model,
         optimizer=optimizer,
         criterion=criterion,
-        train_mb_size=128,
-        train_epochs=100,
-        eval_mb_size=128,
+        train_mb_size=256,
+        train_epochs=300,
+        eval_mb_size=256,
         device=device,
         evaluator=eval_plugin,
         plugins=[
             DMC(
-                stage_2_epochs=100,
-                lr=0.01,
+                stage_2_epochs=300,
+                lr=0.001,
                 classes_per_task=20,
                 dataloader=cifar,
             ),

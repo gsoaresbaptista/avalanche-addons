@@ -50,10 +50,11 @@ class DMC(SupervisedPlugin):
 
     def after_training_exp(self, strategy: "SupervisedTemplate", **kwargs):
         task_id = strategy.clock.train_exp_counter
+        minimize = 4
+        current_lr = self.lr
 
         #
         if task_id != 0:
-            loss_acc, iterations = 0, 0
             stage2_str = "| E {:3d} | Train: loss={:.3f} |"
 
             self.model_new = deepcopy(strategy.model)
@@ -62,15 +63,19 @@ class DMC(SupervisedPlugin):
                 self.linear_in, self.acc_clases, True
             ).to("cuda")
 
+            strategy.model.train()
             self.tuning_optim = SGD(
                 strategy.model.parameters(),
-                lr=self.lr,
+                lr=current_lr,
                 momentum=0.9,
                 weight_decay=1e-4,
             )
             self.tuning_optim.zero_grad()
 
             for e in range(self.stage_2_epochs):
+                total_loss, total_num = 0, 0
+                min_loss = 999999999999999999
+                without_loss_update = 0
                 for images, targets in self.dataloader:
                     images, targets = images.to(strategy.device), targets.to(
                         strategy.device
@@ -85,8 +90,9 @@ class DMC(SupervisedPlugin):
                     loss = self.double_loss_distillation(
                         task_id, outputs, targets_old, targets_new
                     )
-                    loss_acc += loss
-                    iterations += 1
+                    total_loss += loss.item() * len(targets)
+                    total_num += len(targets)
+
                     # Backward
                     self.tuning_optim.zero_grad()
                     loss.backward()
@@ -95,7 +101,27 @@ class DMC(SupervisedPlugin):
                     )
                     self.tuning_optim.step()
 
-                print(stage2_str.format(e + 1, loss_acc / iterations))
+                print(stage2_str.format(e + 1, total_loss / total_num))
+
+                if total_loss / total_num < min_loss:
+                    min_loss = total_loss
+                    without_loss_update = 0
+                else:
+                    without_loss_update += 1
+                if without_loss_update >= 7:
+                    if minimize != 0:
+                        minimize -= 1
+                        current_lr *= 0.1
+                        self.tuning_optim = SGD(
+                            strategy.model.parameters(),
+                            lr=current_lr,
+                            momentum=0.9,
+                            weight_decay=1e-4,
+                        )
+                        self.tuning_optim.zero_grad()
+                    else:
+                        print("EARLY STOP!")
+                        break
 
         self.model_old = deepcopy(strategy.model)
 
@@ -110,13 +136,6 @@ class DMC(SupervisedPlugin):
         )
 
     def re_initialize_model(self, strategy):
-        for m in strategy.model.modules():
-            if isinstance(m, (nn.Conv2d, nn.BatchNorm2d, nn.Linear)):
-                m.reset_parameters()
-        # Get new model
-        self.model_new = deepcopy(strategy.model)
-        with torch.no_grad():
-            self.model_new.fc.weight.zero_()
-            self.model_new.fc.bias.zero_()
-            for p in self.model_new.fc.parameters():
-                p.requires_grad = False
+        for layer in strategy.model.children():
+            if hasattr(layer, "reset_parameters"):
+                layer.reset_parameters()
