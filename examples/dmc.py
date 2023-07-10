@@ -9,7 +9,9 @@ from avalanche.benchmarks.classic import SplitCIFAR100
 from avalanche.training.supervised import Naive
 from avalanche.evaluation.metrics import accuracy_metrics, forgetting_bwt
 from avalanche.evaluation.metrics.forgetting_bwt import bwt_metrics
-from avalanche.evaluation.metrics.forward_transfer import forward_transfer_metrics 
+from avalanche.evaluation.metrics.forward_transfer import (
+    forward_transfer_metrics,
+)
 
 from avalanche.logging import InteractiveLogger, TextLogger
 from avalanche.training.plugins import EvaluationPlugin
